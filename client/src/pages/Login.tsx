@@ -31,13 +31,13 @@ export default function Login() {
         setMessage(`Login failed: ${data.error || "Invalid credentials"}`);
         setMessageColor("red");
       } else {
-        // ✅ store token via context (handles localStorage + state)
+        // store token via context (handles localStorage + state)
         login(data.token!);
 
         setMessage("Login successful!");
         setMessageColor("green");
 
-        // Clear fields
+        // Clear fields after successful login
         setEmail("");
         setPassword("");
 

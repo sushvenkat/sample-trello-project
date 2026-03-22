@@ -34,7 +34,7 @@ function AppRoutes() {
       <Route path="/signup" element={<Signup />} />
 
       <Route
-        path="/"
+        path="/dashboard"
         element={
           <ProtectedRoute>
             <Dashboard />
