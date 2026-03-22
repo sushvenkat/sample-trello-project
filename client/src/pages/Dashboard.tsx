@@ -25,9 +25,7 @@ export default function Dashboard() {
 
   // Fetch projects on mount
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchProjects();
-    }
+    if (isAuthenticated) fetchProjects();
   }, [isAuthenticated]);
 
   const fetchProjects = async () => {
@@ -41,14 +39,16 @@ export default function Dashboard() {
     }
   };
 
+  const handleProjectClick = (project: Project) => {
+    navigate(`/projects/${project.id}`);
+  };
+
   const handleLogout = () => {
     logout();
     navigate("/login");
   };
 
-  const handleCreateProjectClick = () => {
-    setShowModal(true);
-  };
+  const handleCreateProjectClick = () => setShowModal(true);
 
   const handleModalClose = () => {
     setShowModal(false);
@@ -81,9 +81,6 @@ export default function Dashboard() {
       }
 
       const project: Project = await response.json();
-      console.log("Project created:", project);
-
-      // Close modal and update project list
       handleModalClose();
       setProjects((prev) => [...prev, project]);
       setLoading(false);
@@ -105,7 +102,7 @@ export default function Dashboard() {
         borderRadius: "8px",
       }}
     >
-      {/* Top bar: Title + Buttons */}
+      {/* Top bar */}
       <div
         style={{
           display: "flex",
@@ -149,17 +146,19 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Project List */}
+      {/* Projects */}
       {isAuthenticated && projects.length > 0 ? (
         <ul style={{ listStyle: "none", padding: 0 }}>
           {projects.map((project) => (
             <li
               key={project.id}
+              onClick={() => handleProjectClick(project)}
               style={{
                 padding: "1rem",
                 marginBottom: "0.5rem",
                 border: "1px solid #ccc",
                 borderRadius: "4px",
+                cursor: "pointer",
               }}
             >
               <strong>{project.name}</strong>
@@ -173,7 +172,7 @@ export default function Dashboard() {
         <p style={{ color: "red", textAlign: "center" }}>Not authenticated</p>
       )}
 
-      {/* Modal */}
+      {/* Modal (Create Project) */}
       {showModal && (
         <div
           style={{

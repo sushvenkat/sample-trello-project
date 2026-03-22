@@ -1,10 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./auth/AuthContext";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
+import ProjectTasks from "./pages/ProjectTasks";
 import ProtectedRoute from "./components/ProtectedRoute";
-import { useAuth } from "./auth/AuthContext";
 
 export default function App() {
   return (
@@ -17,22 +17,20 @@ export default function App() {
 }
 
 function AppRoutes() {
-  const { isAuthenticated } = useAuth(); // <-- get auth state
+  const { isAuthenticated } = useAuth();
 
   return (
     <Routes>
+      {/* Login route */}
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/dashboard" /> : <Login />}
       />
 
-      <Route
-        path="/dashboard"
-        element={isAuthenticated ? <Dashboard /> : <Navigate to="/login" />}
-      />
-
+      {/* Signup route */}
       <Route path="/signup" element={<Signup />} />
 
+      {/* Dashboard protected route */}
       <Route
         path="/dashboard"
         element={
@@ -42,7 +40,18 @@ function AppRoutes() {
         }
       />
 
-      <Route path="*" element={<Navigate to="/" />} />
+      {/* Project tasks page */}
+      <Route
+        path="/projects/:id"
+        element={
+          <ProtectedRoute>
+            <ProjectTasks />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Default/fallback route */}
+      <Route path="*" element={<Navigate to="/dashboard" />} />
     </Routes>
   );
 }
