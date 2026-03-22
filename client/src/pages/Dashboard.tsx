@@ -1,18 +1,45 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
 const baseURL = "http://localhost:3000/projects";
 
+interface Project {
+  id: number;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { isAuthenticated, logout } = useAuth();
 
+  const [projects, setProjects] = useState<Project[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Fetch projects on mount
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchProjects();
+    }
+  }, [isAuthenticated]);
+
+  const fetchProjects = async () => {
+    try {
+      const response = await fetch(baseURL);
+      if (!response.ok) throw new Error("Failed to fetch projects");
+      const data: Project[] = await response.json();
+      setProjects(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -53,11 +80,12 @@ export default function Dashboard() {
         return;
       }
 
-      const project = await response.json();
+      const project: Project = await response.json();
       console.log("Project created:", project);
 
-      // Close modal and optionally refresh project list
+      // Close modal and update project list
       handleModalClose();
+      setProjects((prev) => [...prev, project]);
       setLoading(false);
     } catch (err) {
       console.error(err);
@@ -69,7 +97,7 @@ export default function Dashboard() {
   return (
     <div
       style={{
-        maxWidth: "500px",
+        maxWidth: "600px",
         margin: "2rem auto",
         position: "relative",
         padding: "2rem",
@@ -121,8 +149,27 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Not Authenticated Message */}
-      {!isAuthenticated && (
+      {/* Project List */}
+      {isAuthenticated && projects.length > 0 ? (
+        <ul style={{ listStyle: "none", padding: 0 }}>
+          {projects.map((project) => (
+            <li
+              key={project.id}
+              style={{
+                padding: "1rem",
+                marginBottom: "0.5rem",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
+              }}
+            >
+              <strong>{project.name}</strong>
+              {project.description && <p>{project.description}</p>}
+            </li>
+          ))}
+        </ul>
+      ) : isAuthenticated ? (
+        <p>No projects found.</p>
+      ) : (
         <p style={{ color: "red", textAlign: "center" }}>Not authenticated</p>
       )}
 
@@ -153,9 +200,7 @@ export default function Dashboard() {
           >
             <h3 style={{ marginBottom: "1rem" }}>Create Project</h3>
 
-            {error && (
-              <p style={{ color: "red", marginBottom: "1rem" }}>{error}</p>
-            )}
+            {error && <p style={{ color: "red", marginBottom: "1rem" }}>{error}</p>}
 
             <div style={{ marginBottom: "1rem" }}>
               <label>Project Name</label>

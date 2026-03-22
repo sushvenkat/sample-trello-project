@@ -4,14 +4,14 @@ import { prisma } from "../lib/prisma";
 const projectRouter = Router()
 
 // Create Project
-projectRouter.post('/', async (req: Request, res: Response) => {
+projectRouter.post('/create', async (req: Request, res: Response) => {
   try {
     const { name, description } = req.body
 
     if (!name) {
       return res.status(400).json({ error: 'Project name is required' })
     }
-
+    console.log("Creating Project*******");
     const project = await prisma.project.create({
       data: { name, description }
     })
@@ -67,27 +67,45 @@ projectRouter.get('/:id', async (req: Request, res: Response) => {
 })
 
 
-// Get Tasks for Project (Kanban)
+// Get Tasks for Project (Kanban) with project name
 projectRouter.get('/:id/tasks', async (req: Request, res: Response) => {
   try {
-    const projectId = parseInt(req.params.id as string)
+    const projectId = parseInt(req.params.id as string);
 
-    const tasks = await prisma.task.findMany({
-      where: { projectId },
-      orderBy: [
-        { status: 'asc' },      
-        { createdAt: 'desc' }
-      ],
-      include: {
-        assignee: true
-      }
-    })
+    // Fetch project and its tasks
+    const projectWithTasks = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        id: true,
+        name: true,
+        tasks: {
+          orderBy: [
+            { status: 'asc' },
+            { createdAt: 'desc' }
+          ],
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            dueDate: true,
+            assignee: true,
+            projectId: true,
+          },
+        },
+      },
+    });
 
-    res.json(tasks)
+    if (!projectWithTasks) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    res.json(projectWithTasks);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch tasks' })
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch tasks' });
   }
-})
+});
 
 
 // Users with Tasks in Project

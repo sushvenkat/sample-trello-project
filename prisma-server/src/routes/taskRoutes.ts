@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import { prisma } from "../lib/prisma";
 import { TaskStatus } from '../../generated/prisma/client'
 
-const taskRouter = Router()
+const taskRouter = Router({ mergeParams: true })
 
 const parseId = (id: string | string[]): number | null => {
   if (Array.isArray(id)) return null
@@ -11,12 +11,33 @@ const parseId = (id: string | string[]): number | null => {
 }
 
 // Create Task
-taskRouter.post('/', async (req: Request, res: Response) => {
+taskRouter.post('/create', async (req: Request, res: Response) => {
   try {
-    const { title, projectId, description, dueDate, assigneeId, status } = req.body
+    const { title, projectId, description, assignee, status, dueDate } = req.body;
+    console.log("ProjectId and Status is:", projectId, status.toUpperCase());
 
     if (!title || !projectId) {
-      return res.status(400).json({ error: 'title and projectId are required' })
+      return res.status(400).json({ error: 'title and projectId are required' });
+    }
+
+    // Resolve assignee to userId
+    let assigneeId: number | null = null;
+
+    if (assignee) {
+      const user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: assignee },
+            { name: assignee }
+          ]
+        }
+      });
+
+      if (!user) {
+        return res.status(400).json({ error: 'Assignee not found' });
+      }
+
+      assigneeId = user.id;
     }
 
     const task = await prisma.task.create({
@@ -25,19 +46,20 @@ taskRouter.post('/', async (req: Request, res: Response) => {
         description,
         projectId,
         dueDate: dueDate ? new Date(dueDate) : null,
-        assigneeId: assigneeId ?? null,
-        status: status ?? TaskStatus.TODO
-      }
-    })
+        assigneeId,
+        status: status?.replace('-', '_').toUpperCase() ?? 'TODO',
+      },
+    });
 
-    res.status(201).json(task)
+    res.status(201).json(task);
   } catch (error: any) {
+    console.error(error);
     if (error.code === 'P2002') {
-      return res.status(409).json({ error: 'Duplicate task title in project' })
+      return res.status(409).json({ error: 'Duplicate task title in project' });
     }
-    res.status(500).json({ error: 'Failed to create task' })
+    res.status(500).json({ error: 'Failed to create task' });
   }
-})
+});
 
 // Get Task by ID
 taskRouter.get('/:id', async (req: Request, res: Response) => {
