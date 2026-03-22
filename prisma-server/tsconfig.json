@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",               // modern JS output
+    "module": "ESNext",               // ESM modules
+    "moduleResolution": "node",       // resolve modules like Node
+    "esModuleInterop": true,          // allow default imports from CJS
+    "strict": true,                   // enable strict type checks
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "rootDir": "./",             
+    "outDir": "dist",                 // compiled JS output folder
+    
+    "baseUrl": "src",                  // root for absolute imports
+    "paths": {                         // optional aliases
+      "@lib/*": ["lib/*"],
+      "@routes/*": ["routes/*"]
+    }
+  },
+  "include": ["src/**/*"],            // include all source files
+  "exclude": ["node_modules", "dist"] // exclude build and dependencies
+}
