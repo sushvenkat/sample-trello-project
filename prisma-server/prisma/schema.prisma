@@ -12,10 +12,57 @@ datasource db {
   provider = "sqlite"
 }
 
-model User { 
-  id    Int     @id @default(autoincrement()) 
-  email String  @unique
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
   password  String?
-  name     String?
+  name      String?
   createdAt DateTime @default(now())
-} 
+  tasks     Task[]
+}
+
+model Project {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tasks Task[]
+
+  @@unique([name])
+  @@index([createdAt])
+}
+
+model Task {
+  id          Int         @id @default(autoincrement())
+  title       String
+  description String?
+  status      TaskStatus  @default(TODO)
+  dueDate     DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  projectId   Int
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  assigneeId  Int?
+  assignee    User?       @relation(fields: [assigneeId], references: [id], onDelete: SetNull) 
+
+  // Indexes for optimized queries
+  @@index([projectId])
+  @@index([projectId, status])
+  @@index([assigneeId])
+  @@index([assigneeId, status])
+  @@index([dueDate, status])
+  @@index([projectId, assigneeId])
+
+  // Ensure unique task titles per project
+  @@unique([projectId, title])
+}
