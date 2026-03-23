@@ -1,4 +1,4 @@
-# 📌 Sample Trello Project (Kanban Task Manager)
+# 📌 Kanban Task Manager
 
 A full-stack Trello-style task management application that allows users to manage project tasks using a Kanban board UI with drag-and-drop functionality.
 
