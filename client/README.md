@@ -1,75 +1,130 @@
-# React + TypeScript + Vite
+# 📌 Sample Trello Project (Kanban Task Manager)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A full-stack Trello-style task management application that allows users to manage project tasks using a Kanban board UI with drag-and-drop functionality.
 
-Currently, two official plugins are available:
+## 🚀 Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Kanban Board UI (Todo, In Progress, Done)
+- User-based Task Grouping
+- Drag and Drop using @hello-pangea/dnd
+- Create Task with modal form
+- Real-time UI updates (optimistic)
+- Validation for duplicate titles and statuses
 
-## React Compiler
+## 🏗️ Tech Stack
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+Frontend:
+- React (Hooks)
+- React Router
+- TypeScript
+- @hello-pangea/dnd
 
-Note: This will impact Vite dev & build performances.
+Backend:
+- Node.js + Express
+- Prisma ORM
+- SQLite with BetterSQLite3 Adapter
 
-## Expanding the ESLint configuration
+          ┌──────────────────────┐
+          │      Frontend        │
+          │   React + 
+            DnD UI(Library for 
+            Drag,drop)     │
+          │                      │
+          │  - Drag & Drop       │
+          │  - State Mgmt        │
+          │  - API Calls         │
+          └─────────┬────────────┘
+                    │ HTTP (REST)
+                    ▼
+          ┌──────────────────────┐
+          │      Backend         │
+          │   Node + Express     │
+          │                      │
+          │  - Controllers       │
+          │  - Validation        │
+          │  - Business Logic    │
+          └─────────┬────────────┘
+                    │
+                    ▼
+          ┌──────────────────────┐
+          │       Prisma         │
+          │        ORM           │
+          └─────────┬────────────┘
+                    │
+                    ▼
+          ┌──────────────────────┐
+          │      Database        │
+          │ (Postgres/SQLite)    │
+          │                      │
+          │  Users(Auth flow + 
+            tasks)               │
+          │  Tasks               │
+          │  Projects            │
+          └──────────────────────┘
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 📂 Project Structure
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
+client/
+ └── src/
+     └── pages/
+         └── ProjectTasks.tsx
+
+## ⚙️ API Endpoints
+
+GET    /projects/:id/users-with-tasks  
+POST   /projects/:id/tasks/create  
+PATCH  /projects/:id/tasks/:taskId/update-task  
+GET    /users  
+
+## 🧠 Core Logic
+
+Task normalization ensures consistent status values.
+
+Drag-and-drop flow:
+1. Capture drag event
+2. Extract source/destination
+3. Update UI optimistically
+4. Sync with backend
+
+State structure:
+[
   {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+    user: { id, name },
+    tasks: Task[]
+  }
+]
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## ▶️ How to Run
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+git clone https://github.com/sushvenkat/sample-trello-project.git  
+cd sample-trello-project/client  
+npm install  
+npm run dev  
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+cd sample-trello-project/prisma-server  
+npm install  
+npx tsx src/server.ts
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Backend should run at http://localhost:3000
+Frontend enpoint: http://localhost:5173/
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+To add users to system with Names, run the script.ts file npx tsx script.ts
+## 🔮 Future Improvements
+
+- Redux / global state  
+- WebSocket real-time sync  
+- Authentication  - OAuth2.0
+
+## 👩‍💻 Author
+
+Sushma Venkat  
+https://github.com/sushvenkat
+
+## ⭐ Summary
+
+This project demonstrates:
+- Drag-and-drop system design  
+- Kanban workflow  
+- Full-stack integration  
+- Optimistic UI updates  
+
