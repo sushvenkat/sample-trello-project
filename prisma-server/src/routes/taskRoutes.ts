@@ -147,23 +147,34 @@ taskRouter.get('/', async (req: Request, res: Response) => {
 })
 
 // Update Task - Partial updates allowed
-taskRouter.patch('/:id', async (req: Request, res: Response) => {
+taskRouter.patch('/:id/update-task', async (req: Request, res: Response) => {
   try {
+    console.log("Updating task with data:", req.body);
+    
     const taskId = parseId(req.params.id)
     if (!taskId) return res.status(400).json({ error: 'Invalid task id' })
 
     const { title, description, status, dueDate, assigneeId } = req.body
+    const mapStatusToEnum = (status: string) => {
+      switch (status) {
+        case "todo": return "TODO";
+        case "in-progress": return "IN_PROGRESS";
+        case "done": return "DONE";
+        default: return "TODO";
+      }
+    };
 
     const task = await prisma.task.update({
       where: { id: taskId },
       data: {
         title,
         description,
-        status,
+        status: status ? mapStatusToEnum(status) : undefined,
         dueDate: dueDate ? new Date(dueDate) : undefined,
         assigneeId: assigneeId !== undefined ? assigneeId : undefined
       }
     })
+    console.log("Updated task:", task);
 
     res.json(task)
   } catch (error: any) {

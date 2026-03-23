@@ -2,14 +2,14 @@ import { prisma } from "./src/lib/prisma";
 
 async function main() {
   // Create a new user with email credsentials
-  // const user = await prisma.user.create({
-  //   data: {
-  //     password: "Erika",
-  //     email: "Erika@prisma.io",
-  //     name: "Erika Allen"
-  //   },
-  // });
-  // console.log("Created user:", user);
+  const user = await prisma.user.create({
+    data: {
+      password: "Alice123!",
+      email: "Alice12345@prisma.io",
+      name: "Alice Stephanie",
+    },
+  });
+  console.log("Created user:", user);
 
   // Fetch all users with their email credsentials
   const allUsers = await prisma.user.findMany({});
