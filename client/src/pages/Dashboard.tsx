@@ -17,18 +17,26 @@ export default function Dashboard() {
   const { isAuthenticated, logout } = useAuth();
 
   const [projects, setProjects] = useState<Project[]>([]);
-  const [showModal, setShowModal] = useState(false);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+
+  // Create Project
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
-  // Fetch projects on mount
+  // Delete Project
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [deletingProject, setDeletingProject] = useState(false);
+
   useEffect(() => {
     if (isAuthenticated) fetchProjects();
   }, [isAuthenticated]);
 
   const fetchProjects = async () => {
+    setLoadingProjects(true);
     try {
       const response = await fetch(baseURL);
       if (!response.ok) throw new Error("Failed to fetch projects");
@@ -36,237 +44,221 @@ export default function Dashboard() {
       setProjects(data);
     } catch (err) {
       console.error(err);
+    } finally {
+      setLoadingProjects(false);
     }
   };
 
-  const handleProjectClick = (project: Project) => {
-    navigate(`/projects/${project.id}`);
-  };
-
+  /** Logout */
   const handleLogout = () => {
     logout();
     navigate("/login");
   };
 
-  const handleCreateProjectClick = () => setShowModal(true);
-
-  const handleModalClose = () => {
-    setShowModal(false);
+  /** CREATE PROJECT **/
+  const openCreateModal = () => setShowCreateModal(true);
+  const closeCreateModal = () => {
+    setShowCreateModal(false);
     setProjectName("");
     setProjectDescription("");
-    setError(null);
+    setCreateError(null);
   };
-
-  const handleProjectSubmit = async () => {
+  const handleCreateProject = async () => {
     if (!projectName.trim()) {
-      setError("Project name is required");
+      setCreateError("Project name is required");
       return;
     }
-
-    setLoading(true);
-    setError(null);
+    setCreatingProject(true);
+    setCreateError(null);
 
     try {
-      const response = await fetch(`${baseURL}/create`, {
+      const res = await fetch(`${baseURL}/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: projectName, description: projectDescription }),
       });
-
-      if (!response.ok) {
-        const data = await response.json();
-        setError(data.error || "Failed to create project");
-        setLoading(false);
+      if (!res.ok) {
+        const data = await res.json();
+        setCreateError(data.error || "Failed to create project");
         return;
       }
-
-      const project: Project = await response.json();
-      handleModalClose();
-      setProjects((prev) => [...prev, project]);
-      setLoading(false);
+      const newProject: Project = await res.json();
+      setProjects((prev) => [...prev, newProject]);
+      closeCreateModal();
     } catch (err) {
       console.error(err);
-      setError("Failed to create project");
-      setLoading(false);
+      setCreateError("Failed to create project");
+    } finally {
+      setCreatingProject(false);
     }
   };
 
+  /** DELETE PROJECT **/
+  const openDeleteModal = () => setShowDeleteModal(true);
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setSelectedProjectId(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedProjectId) return;
+    setDeletingProject(true);
+    try {
+      const res = await fetch(`${baseURL}/${selectedProjectId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete project");
+      setProjects((prev) => prev.filter((p) => p.id !== selectedProjectId));
+      closeDeleteModal();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete project");
+    } finally {
+      setDeletingProject(false);
+    }
+  };
+
+  /** Navigate to project tasks */
+  const handleProjectClick = (projectId: number) => {
+    navigate(`/projects/${projectId}`);
+  };
+
   return (
-    <div
-      style={{
-        maxWidth: "600px",
-        margin: "2rem auto",
-        position: "relative",
-        padding: "2rem",
-        border: "1px solid #ddd",
-        borderRadius: "8px",
-      }}
-    >
-      {/* Top bar */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "2rem",
-        }}
-      >
-        <h2 style={{ margin: 0 }}>Dashboard</h2>
-
+    <div className="dashboard-container">
+      {/* Top Bar */}
+      <div className="dashboard-topbar">
+        <h2>Dashboard</h2>
         {isAuthenticated && (
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button
-              onClick={handleCreateProjectClick}
-              style={{
-                padding: "0.5rem 1rem",
-                backgroundColor: "#2563eb",
-                color: "white",
-                border: "none",
-                borderRadius: "4px",
-                cursor: "pointer",
-              }}
-            >
-              + Create Project
-            </button>
-
-            <button
-              onClick={handleLogout}
-              style={{
-                padding: "0.5rem 1rem",
-                backgroundColor: "#ef4444",
-                color: "white",
-                border: "none",
-                borderRadius: "4px",
-                cursor: "pointer",
-              }}
-            >
-              Logout
-            </button>
-          </div>
+          <button className="btn-logout" onClick={handleLogout}>
+            Logout
+          </button>
         )}
       </div>
 
+      {/* Action Buttons */}
+      {isAuthenticated && (
+        <div className="dashboard-actions">
+          <button className="btn-primary" onClick={openCreateModal}>
+            + Create Project
+          </button>
+          <button
+            className="btn-danger"
+            onClick={openDeleteModal}
+            disabled={projects.length === 0} // enable if projects exist
+          >
+            Delete Project
+          </button>
+        </div>
+      )}
+
       {/* Projects */}
-      {isAuthenticated && projects.length > 0 ? (
-        <ul style={{ listStyle: "none", padding: 0 }}>
+      {loadingProjects ? (
+        <p>Loading projects...</p>
+      ) : projects.length === 0 ? (
+        <p>No projects found.</p>
+      ) : (
+        <div className="projects-grid">
           {projects.map((project) => (
-            <li
+            <div
               key={project.id}
-              onClick={() => handleProjectClick(project)}
-              style={{
-                padding: "1rem",
-                marginBottom: "0.5rem",
-                border: "1px solid #ccc",
-                borderRadius: "4px",
-                cursor: "pointer",
-              }}
+              className="project-card"
+              onClick={() => handleProjectClick(project.id)}
             >
               <strong>{project.name}</strong>
               {project.description && <p>{project.description}</p>}
-            </li>
+            </div>
           ))}
-        </ul>
-      ) : isAuthenticated ? (
-        <p>No projects found.</p>
-      ) : (
-        <p style={{ color: "red", textAlign: "center" }}>Not authenticated</p>
+        </div>
       )}
 
-      {/* Modal (Create Project) */}
-      {showModal && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(0,0,0,0.5)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "white",
-              padding: "2rem",
-              borderRadius: "8px",
-              width: "90%",
-              maxWidth: "400px",
-            }}
-          >
-            <h3 style={{ marginBottom: "1rem" }}>Create Project</h3>
-
-            {error && <p style={{ color: "red", marginBottom: "1rem" }}>{error}</p>}
-
-            <div style={{ marginBottom: "1rem" }}>
-              <label>Project Name</label>
-              <input
-                type="text"
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "0.5rem",
-                  marginTop: "0.25rem",
-                  border: "1px solid #ccc",
-                  borderRadius: "4px",
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: "1rem" }}>
-              <label>Description</label>
-              <textarea
-                value={projectDescription}
-                onChange={(e) => setProjectDescription(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "0.5rem",
-                  marginTop: "0.25rem",
-                  border: "1px solid #ccc",
-                  borderRadius: "4px",
-                }}
-              />
-            </div>
-
-            <div
-              style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}
-            >
-              <button
-                onClick={handleModalClose}
-                style={{
-                  padding: "0.5rem 1rem",
-                  backgroundColor: "#ccc",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
-              >
+      {/* CREATE MODAL */}
+      {showCreateModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3>Create Project</h3>
+            {createError && <p className="error-text">{createError}</p>}
+            <label>Project Name</label>
+            <input
+              type="text"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              placeholder="Project name"
+            />
+            <label>Description</label>
+            <textarea
+              value={projectDescription}
+              onChange={(e) => setProjectDescription(e.target.value)}
+              placeholder="Description (optional)"
+            />
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={closeCreateModal}>
                 Cancel
               </button>
-
               <button
-                onClick={handleProjectSubmit}
-                disabled={loading}
-                style={{
-                  padding: "0.5rem 1rem",
-                  backgroundColor: "#2563eb",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: loading ? "not-allowed" : "pointer",
-                  opacity: loading ? 0.6 : 1,
-                }}
+                className="btn-primary"
+                onClick={handleCreateProject}
+                disabled={creatingProject}
               >
-                {loading ? "Creating..." : "Create"}
+                {creatingProject ? "Creating..." : "Create"}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* DELETE MODAL */}
+      {showDeleteModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3>Delete Project</h3>
+            <p>Select a project to delete:</p>
+            <select
+              className="project-select"
+              value={selectedProjectId ?? ""}
+              onChange={(e) =>
+                setSelectedProjectId(e.target.value ? Number(e.target.value) : null)
+              }
+            >
+              <option value="">-- Select Project --</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={closeDeleteModal}>
+                Cancel
+              </button>
+              <button
+                className="btn-danger"
+                onClick={handleConfirmDelete}
+                disabled={!selectedProjectId || deletingProject}
+              >
+                {deletingProject ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Styles */}
+      <style>{`
+        .dashboard-container { max-width: 700px; margin: 2rem auto; padding: 2rem; border-radius: 12px; background: #f8f9fa; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .dashboard-topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .dashboard-actions { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+        .btn-primary { background-color: #2563eb; color: white; padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; }
+        .btn-danger { background-color: #ef4444; color: white; padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; }
+        .btn-secondary { background-color: #e5e7eb; color: #111827; padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; }
+        .btn-logout { background-color: #6b7280; color: white; padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; }
+        .projects-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+        .project-card { background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); cursor: pointer; transition: transform 0.2s; }
+        .project-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .modal-backdrop { position: fixed; top:0; left:0; width:100vw; height:100vh; background: rgba(0,0,0,0.5); display:flex; justify-content:center; align-items:center; z-index:1000; }
+        .modal-card { background:white; padding:2rem; border-radius:12px; width:90%; max-width:400px; box-shadow:0 10px 25px rgba(0,0,0,0.15); }
+        .modal-card input, .modal-card textarea, .project-select { width: 100%; padding:0.5rem; margin:0.5rem 0 1rem; border:1px solid #ccc; border-radius:6px; }
+        .modal-card input:focus, .modal-card textarea:focus, .project-select:focus { border-color:#2563eb; outline:none; box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
+        .modal-actions { display:flex; justify-content:flex-end; gap:0.5rem; }
+        .error-text { color: #ef4444; }
+      `}</style>
     </div>
   );
 }
