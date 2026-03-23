@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { prisma } from "../lib/prisma";
 import { TaskStatus } from '../../generated/prisma/client'
+import { broadcastTasksUpdated } from '../server'; // import broadcast helper
 
 const taskRouter = Router({ mergeParams: true })
 
@@ -22,45 +23,37 @@ taskRouter.post('/create', async (req: Request, res: Response) => {
       dueDate
     } = req.body;
 
-    console.log("ProjectId and Status is:", projectId, status?.toUpperCase());
-
     if (!title || !projectId) {
       return res.status(400).json({ error: 'title and projectId are required' });
     }
 
-    // Convert assigneeId from string → number
     const assigneeId =
       rawAssigneeId !== undefined && rawAssigneeId !== null && rawAssigneeId !== ""
         ? Number(rawAssigneeId)
         : null;
 
-    // Validate conversion
     if (assigneeId !== null && Number.isNaN(assigneeId)) {
       return res.status(400).json({ error: 'Invalid assigneeId' });
     }
 
-    // Validate user exists (only if provided)
     if (assigneeId !== null) {
-      const user = await prisma.user.findUnique({
-        where: { id: assigneeId }
-      });
-
-      if (!user) {
-        return res.status(400).json({ error: 'Assignee not found' });
-      }
+      const user = await prisma.user.findUnique({ where: { id: assigneeId } });
+      if (!user) return res.status(400).json({ error: 'Assignee not found' });
     }
 
-    // Create task
     const task = await prisma.task.create({
       data: {
         title,
         description,
-        projectId: Number(projectId), // also ensure projectId is number
+        projectId: Number(projectId),
         dueDate: dueDate ? new Date(dueDate) : null,
         assigneeId,
         status: status?.replace('-', '_').toUpperCase() ?? 'TODO',
       },
     });
+
+    // Broadcast update
+    broadcastTasksUpdated(String(projectId));
 
     res.status(201).json(task);
 
@@ -70,91 +63,13 @@ taskRouter.post('/create', async (req: Request, res: Response) => {
   }
 });
 
-
-// Get Task by ID
-taskRouter.get('/:id', async (req: Request, res: Response) => {
-  try {
-    const taskId = parseId(req.params.id)
-    if (!taskId) return res.status(400).json({ error: 'Invalid task id' })
-
-    const task = await prisma.task.findUnique({
-      where: { id: taskId },
-      include: {
-        project: true,
-        assignee: true
-      }
-    })
-
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' })
-    }
-
-    res.json(task)
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch task' })
-  }
-})
-
-// Get Tasks with filters and pagination - taskId + projectId
-taskRouter.get('/', async (req: Request, res: Response) => {
-  try {
-    const {
-      projectId,
-      assigneeId,
-      status,
-      skip = '0',
-      take = '20'
-    } = req.query
-
-    const where: any = {}
-
-    if (projectId) {
-      const id = parseId(projectId as string)
-      if (!id) return res.status(400).json({ error: 'Invalid projectId' })
-      where.projectId = id
-    }
-
-    if (assigneeId) {
-      const id = parseId(assigneeId as string)
-      if (!id) return res.status(400).json({ error: 'Invalid assigneeId' })
-      where.assigneeId = id
-    }
-
-    if (status) {
-      if (!Object.values(TaskStatus).includes(status as TaskStatus)) {
-        return res.status(400).json({ error: 'Invalid status' })
-      }
-      where.status = status
-    }
-
-    const tasks = await prisma.task.findMany({
-      where,
-      skip: parseInt(skip as string) || 0,
-      take: parseInt(take as string) || 20,
-      orderBy: [
-        { status: 'asc' },     // uses (projectId, status)
-        { dueDate: 'asc' }
-      ],
-      include: {
-        assignee: true
-      }
-    })
-
-    res.json(tasks)
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch tasks' })
-  }
-})
-
-// Update Task - Partial updates allowed
+// Update Task
 taskRouter.patch('/:id/update-task', async (req: Request, res: Response) => {
   try {
-    console.log("Updating task with data:", req.body);
-    
-    const taskId = parseId(req.params.id)
-    if (!taskId) return res.status(400).json({ error: 'Invalid task id' })
+    const taskId = parseId(req.params.id);
+    if (!taskId) return res.status(400).json({ error: 'Invalid task id' });
 
-    const { title, description, status, dueDate, assigneeId } = req.body
+    const { title, description, status, dueDate, assigneeId } = req.body;
     const mapStatusToEnum = (status: string) => {
       switch (status) {
         case "todo": return "TODO";
@@ -173,52 +88,36 @@ taskRouter.patch('/:id/update-task', async (req: Request, res: Response) => {
         dueDate: dueDate ? new Date(dueDate) : undefined,
         assigneeId: assigneeId !== undefined ? assigneeId : undefined
       }
-    })
-    console.log("Updated task:", task);
+    });
 
-    res.json(task)
+    // Broadcast update to all clients of the project
+    if (task.projectId) broadcastTasksUpdated(String(task.projectId));
+
+    res.json(task);
   } catch (error: any) {
-    if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Task not found' })
-    }
-    if (error.code === 'P2002') {
-      return res.status(409).json({ error: 'Duplicate task title in project' })
-    }
-    res.status(500).json({ error: 'Failed to update task' })
+    if (error.code === 'P2025') return res.status(404).json({ error: 'Task not found' });
+    if (error.code === 'P2002') return res.status(409).json({ error: 'Duplicate task title in project' });
+    res.status(500).json({ error: 'Failed to update task' });
   }
-})
+});
 
 // Delete Task
 taskRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const taskId = parseId(req.params.id)
-    if (!taskId) return res.status(400).json({ error: 'Invalid task id' })
+    const taskId = parseId(req.params.id);
+    if (!taskId) return res.status(400).json({ error: 'Invalid task id' });
 
-    await prisma.task.delete({
+    const task = await prisma.task.delete({
       where: { id: taskId }
-    })
+    });
 
-    res.json({ message: 'Task deleted' })
+    // Broadcast update to all clients of the project
+    if (task.projectId) broadcastTasksUpdated(String(task.projectId));
+
+    res.json({ message: 'Task deleted' });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to delete task' })
+    res.status(500).json({ error: 'Failed to delete task' });
   }
-})
+});
 
-// Overdue Tasks
-taskRouter.get('/overdue/all', async (_req: Request, res: Response) => {
-  try {
-    const tasks = await prisma.task.findMany({
-      where: {
-        dueDate: { lt: new Date() },
-        status: { not: TaskStatus.DONE }
-      },
-      orderBy: { dueDate: 'asc' }
-    })
-
-    res.json(tasks)
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch overdue tasks' })
-  }
-})
-
-export default taskRouter
+export default taskRouter;
