@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import type { DropResult } from "@hello-pangea/dnd";
 
 const baseURL = "http://localhost:3000/projects";
 const userURL = "http://localhost:3000/users";
@@ -24,6 +26,7 @@ export default function ProjectTasks() {
   const navigate = useNavigate();
 
   const [groupedTasks, setGroupedTasks] = useState<UserWithTasks[]>([]);
+  const [users, setUsers] = useState<{ id: number; name: string; email?: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Modal & Form State
@@ -33,7 +36,6 @@ export default function ProjectTasks() {
   const [status, setStatus] = useState<"todo" | "in-progress" | "done">("todo");
   const [assigneeId, setAssigneeId] = useState<number | "">("");
   const [dueDate, setDueDate] = useState("");
-  const [users, setUsers] = useState<{ id: number; name: string; email?: string }[]>([]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,7 +47,6 @@ export default function ProjectTasks() {
     fetchUsers();
   }, [id]);
 
-  // ---------------------- Fetch tasks ----------------------
   const fetchTasks = async (projectId: string) => {
     try {
       const res = await fetch(`${baseURL}/${projectId}/users-with-tasks`);
@@ -53,7 +54,6 @@ export default function ProjectTasks() {
 
       const data: UserWithTasks[] = await res.json();
 
-      // Normalize status strings for consistent frontend rendering
       const normalized = data.map((g) => ({
         user: g.user,
         tasks: g.tasks.map((t) => {
@@ -73,7 +73,6 @@ export default function ProjectTasks() {
     }
   };
 
-  // ---------------------- Fetch users ----------------------
   const fetchUsers = async () => {
     try {
       const res = await fetch(`${userURL}/`);
@@ -85,7 +84,6 @@ export default function ProjectTasks() {
     }
   };
 
-  // ---------------------- Modal handlers ----------------------
   const openModal = () => {
     setShowModal(true);
     setError(null);
@@ -101,22 +99,12 @@ export default function ProjectTasks() {
     setError(null);
   };
 
-  // ---------------------- Submit new task ----------------------
   const handleTaskSubmit = async () => {
     if (!title.trim()) {
       setError("Task title is required");
       return;
     }
     if (!id) return;
-
-    // Prevent duplicate title in the project
-    const duplicate = groupedTasks.some((g) =>
-      g.tasks.some((t) => t.title.toLowerCase() === title.trim().toLowerCase())
-    );
-    if (duplicate) {
-      setError("A task with this title already exists in this project");
-      return;
-    }
 
     setCreating(true);
     setError(null);
@@ -142,32 +130,8 @@ export default function ProjectTasks() {
         return;
       }
 
-      const task: Task = await response.json();
-      const user = users.find((u) => u.id === task.assigneeId);
-
-      const updatedTask = {
-        ...task,
-        assigneeName: user ? user.name || user.email || "Unassigned" : "Unassigned",
-      };
-
-      // Add task to groupedTasks
-      setGroupedTasks((prev) => {
-        const userIndex = prev.findIndex((g) => g.user.id === task.assigneeId);
-        if (userIndex >= 0) {
-          const newTasks = [...prev[userIndex].tasks, updatedTask];
-          const newGroup = [...prev];
-          newGroup[userIndex].tasks = newTasks;
-          return newGroup;
-        } else {
-          return [
-            ...prev,
-            {
-              user: { id: task.assigneeId ?? null, name: updatedTask.assigneeName },
-              tasks: [updatedTask],
-            },
-          ];
-        }
-      });
+      // ✅ Refresh tasks from backend
+      await fetchTasks(id);
 
       closeModal();
     } catch (err) {
@@ -178,20 +142,78 @@ export default function ProjectTasks() {
     }
   };
 
+  const onDragEnd = (result: DropResult) => {
+    const { source, destination, draggableId } = result;
+    if (!destination || !id) return;
+
+    const [sourceUserId, ...sourceStatusParts] = source.droppableId.split("-");
+    const sourceStatus = sourceStatusParts.join("-");
+    const [destUserId, ...destStatusParts] = destination.droppableId.split("-");
+    const destStatus = destStatusParts.join("-");
+
+    const taskId = parseInt(draggableId);
+
+    setGroupedTasks((prev) => {
+      const newState = structuredClone(prev);
+
+      const sourceGroup = newState.find((g) => String(g.user.id) === sourceUserId);
+      const destGroup = newState.find((g) => String(g.user.id) === destUserId);
+      if (!sourceGroup || !destGroup) return prev;
+
+      const taskIndex = sourceGroup.tasks.findIndex((t) => t.id === taskId);
+      if (taskIndex === -1) return prev;
+      const [task] = sourceGroup.tasks.splice(taskIndex, 1);
+
+      const updatedTask = {
+        ...task,
+        status: destStatus,
+        assigneeId: destGroup.user.id,
+        assigneeName: destGroup.user.name,
+      };
+
+      const destTasks = destGroup.tasks;
+      const sameStatusTasks = destTasks.filter((t) => t.status === destStatus);
+
+      let realIndex: number;
+      if (sameStatusTasks.length === 0) {
+        realIndex = destTasks.length;
+      } else if (destination.index === 0) {
+        realIndex = destTasks.findIndex((t) => t.id === sameStatusTasks[0].id);
+      } else {
+        realIndex =
+          destTasks.findIndex((t) => t.id === sameStatusTasks[destination.index - 1].id) + 1;
+      }
+
+      destTasks.splice(realIndex, 0, updatedTask);
+
+      // Update backend and refresh tasks
+      fetch(`${baseURL}/${id}/tasks/${taskId}/update-task`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: destStatus,
+          assigneeId: destGroup.user.id,
+        }),
+      })
+        .then(() => fetchTasks(id))
+        .catch(console.error);
+
+      return newState;
+    });
+  };
+
   if (loading) return <p>Loading tasks...</p>;
 
   return (
-    <div style={{ maxWidth: 1000, margin: "2rem auto", fontFamily: "Arial, sans-serif" }}>
-      {/* Back button */}
-      <button
-        onClick={() => navigate(-1)}
-        style={{ marginBottom: 16, padding: "0.5rem 1rem", backgroundColor: "#ccc", border: "none", borderRadius: 4, cursor: "pointer" }}
-      >
-        ← Back
-      </button>
-
+    <div style={{ maxWidth: 1200, margin: "2rem auto", fontFamily: "Arial, sans-serif" }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
+        <button
+          onClick={() => navigate(-1)}
+          style={{ padding: "0.5rem 1rem", backgroundColor: "#ccc", border: "none", borderRadius: 4, cursor: "pointer" }}
+        >
+          ← Back
+        </button>
         <h2>Project Tasks</h2>
         <button
           onClick={openModal}
@@ -201,49 +223,86 @@ export default function ProjectTasks() {
         </button>
       </div>
 
-      {/* Kanban grid */}
-      <div style={{ display: "grid", gridTemplateColumns: `150px repeat(${statuses.length}, 1fr)`, gap: 10 }}>
-        {/* Header row */}
-        <div></div>
-        {statuses.map((s) => (
-          <div key={s} style={{ textAlign: "center", fontWeight: "bold", padding: 8, borderBottom: "2px solid #333" }}>
-            {s.replace("-", " ")}
-          </div>
-        ))}
-
-        {/* Task rows */}
-        {groupedTasks.map(({ user, tasks }) => (
-          <React.Fragment key={user.id ?? user.name}>
-            <div style={{ padding: 8, fontWeight: "bold", borderRight: "2px solid #ccc", backgroundColor: "#f9f9f9" }}>
-              {user.name}
+      {/* Kanban Board */}
+      <DragDropContext onDragEnd={onDragEnd}>
+        <div style={{ display: "grid", gridTemplateColumns: `200px repeat(${statuses.length}, 1fr)`, gap: 10 }}>
+          {/* Status Headers */}
+          <div></div>
+          {statuses.map((s) => (
+            <div
+              key={s}
+              style={{ textAlign: "center", fontWeight: "bold", padding: 8, borderBottom: "2px solid #333" }}
+            >
+              {s.replace("-", " ")}
             </div>
-            {statuses.map((s) => {
-              const filtered = tasks.filter((t) => t.status === s);
-              return (
-                <div key={s} style={{ minHeight: 50, padding: 5 }}>
-                  {filtered.map((t) => (
-                    <div
-                      key={t.id}
-                      style={{
-                        marginBottom: 5,
-                        padding: 8,
-                        borderRadius: 6,
-                        backgroundColor: s === "todo" ? "#fef3c7" : s === "in-progress" ? "#bfdbfe" : "#bbf7d0",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                      }}
-                    >
-                      <strong>{t.title}</strong>
-                      {t.description && <div style={{ fontSize: "0.9em" }}>{t.description}</div>}
-                      {t.dueDate && <div style={{ fontSize: "0.8em", marginTop: 2 }}>Due: {new Date(t.dueDate).toLocaleDateString()}</div>}
-                    </div>
-                  ))}
-                  {filtered.length === 0 && <div style={{ color: "#999", fontSize: "0.8em" }}>—</div>}
-                </div>
-              );
-            })}
-          </React.Fragment>
-        ))}
-      </div>
+          ))}
+
+          {/* Assignee Rows */}
+          {groupedTasks.map(({ user, tasks }) => (
+            <React.Fragment key={user.id ?? user.name}>
+              <div style={{ padding: 8, fontWeight: "bold", borderRight: "2px solid #ccc", backgroundColor: "#f9f9f9" }}>
+                {user.name}
+              </div>
+              {statuses.map((s) => {
+                const filtered = tasks.filter((t) => t.status === s);
+                return (
+                  <Droppable droppableId={`${user.id}-${s}`} key={`${user.id}-${s}`}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        style={{
+                          minHeight: 50,
+                          padding: 5,
+                          backgroundColor: snapshot.isDraggingOver ? "#f0f0f0" : undefined,
+                          borderRadius: 6,
+                        }}
+                      >
+                        {filtered.map((t, index) => (
+                          <Draggable draggableId={t.id.toString()} index={index} key={t.id}>
+                            {(provided, snapshot) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                style={{
+                                  marginBottom: 5,
+                                  padding: 8,
+                                  borderRadius: 6,
+                                  backgroundColor:
+                                    s === "todo"
+                                      ? "#fef3c7"
+                                      : s === "in-progress"
+                                      ? "#bfdbfe"
+                                      : "#bbf7d0",
+                                  boxShadow: snapshot.isDragging
+                                    ? "0 2px 6px rgba(0,0,0,0.2)"
+                                    : "0 1px 3px rgba(0,0,0,0.1)",
+                                  ...provided.draggableProps.style,
+                                }}
+                              >
+                                <strong>{t.title}</strong>
+                                {t.description && <div style={{ fontSize: "0.9em" }}>{t.description}</div>}
+                                {t.dueDate && (
+                                  <div style={{ fontSize: "0.8em", marginTop: 2 }}>
+                                    Due: {new Date(t.dueDate).toLocaleDateString()}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                        {filtered.length === 0 && <div style={{ color: "#999", fontSize: "0.8em" }}>—</div>}
+                      </div>
+                    )}
+                  </Droppable>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
+      </DragDropContext>
 
       {/* Create Task Modal */}
       {showModal && (
@@ -261,7 +320,16 @@ export default function ProjectTasks() {
             zIndex: 9999,
           }}
         >
-          <div style={{ backgroundColor: "white", padding: 24, borderRadius: 8, width: 400, maxHeight: "90vh", overflowY: "auto" }}>
+          <div
+            style={{
+              backgroundColor: "white",
+              padding: 24,
+              borderRadius: 8,
+              width: 400,
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+          >
             <h3 style={{ marginBottom: 16 }}>Create Task</h3>
             {error && <p style={{ color: "red", marginBottom: 16 }}>{error}</p>}
 
@@ -299,12 +367,11 @@ export default function ProjectTasks() {
               style={{ width: "100%", padding: 8, marginBottom: 16 }}
             >
               <option value="">Select Assignee</option>
-              {Array.isArray(users) &&
-                users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name || u.email}
-                  </option>
-                ))}
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name || u.email}
+                </option>
+              ))}
             </select>
 
             <label>Due Date</label>
