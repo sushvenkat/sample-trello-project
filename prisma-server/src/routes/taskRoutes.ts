@@ -13,38 +13,49 @@ const parseId = (id: string | string[]): number | null => {
 // Create Task
 taskRouter.post('/create', async (req: Request, res: Response) => {
   try {
-    const { title, projectId, description, assignee, status, dueDate } = req.body;
-    console.log("ProjectId and Status is:", projectId, status.toUpperCase());
+    const {
+      title,
+      projectId,
+      description,
+      assigneeId: rawAssigneeId,
+      status,
+      dueDate
+    } = req.body;
+
+    console.log("ProjectId and Status is:", projectId, status?.toUpperCase());
 
     if (!title || !projectId) {
       return res.status(400).json({ error: 'title and projectId are required' });
     }
 
-    // Resolve assignee to userId
-    let assigneeId: number | null = null;
+    // Convert assigneeId from string → number
+    const assigneeId =
+      rawAssigneeId !== undefined && rawAssigneeId !== null && rawAssigneeId !== ""
+        ? Number(rawAssigneeId)
+        : null;
 
-    if (assignee) {
-      const user = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { email: assignee },
-            { name: assignee }
-          ]
-        }
+    // Validate conversion
+    if (assigneeId !== null && Number.isNaN(assigneeId)) {
+      return res.status(400).json({ error: 'Invalid assigneeId' });
+    }
+
+    // Validate user exists (only if provided)
+    if (assigneeId !== null) {
+      const user = await prisma.user.findUnique({
+        where: { id: assigneeId }
       });
 
       if (!user) {
         return res.status(400).json({ error: 'Assignee not found' });
       }
-
-      assigneeId = user.id;
     }
 
+    // Create task
     const task = await prisma.task.create({
       data: {
         title,
         description,
-        projectId,
+        projectId: Number(projectId), // also ensure projectId is number
         dueDate: dueDate ? new Date(dueDate) : null,
         assigneeId,
         status: status?.replace('-', '_').toUpperCase() ?? 'TODO',
@@ -52,14 +63,13 @@ taskRouter.post('/create', async (req: Request, res: Response) => {
     });
 
     res.status(201).json(task);
-  } catch (error: any) {
-    console.error(error);
-    if (error.code === 'P2002') {
-      return res.status(409).json({ error: 'Duplicate task title in project' });
-    }
+
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Failed to create task' });
   }
 });
+
 
 // Get Task by ID
 taskRouter.get('/:id', async (req: Request, res: Response) => {

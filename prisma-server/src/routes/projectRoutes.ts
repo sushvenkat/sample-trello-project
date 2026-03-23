@@ -62,6 +62,7 @@ projectRouter.get('/:id', async (req: Request, res: Response) => {
 
     res.json(project)
   } catch (error) {
+    console.log(error);
     res.status(500).json({ error: 'Failed to fetch project' })
   }
 })
@@ -108,11 +109,13 @@ projectRouter.get('/:id/tasks', async (req: Request, res: Response) => {
 });
 
 
-// Users with Tasks in Project
+// Get all users with their tasks for a project
 projectRouter.get('/:id/users-with-tasks', async (req: Request, res: Response) => {
   try {
-    const projectId = parseInt(req.params.id as string)
+    const projectId = parseInt(req.params.id as string);
+    if (isNaN(projectId)) return res.status(400).json({ error: 'Invalid project ID' });
 
+    // Fetch all tasks for this project including assignee info
     const tasks = await prisma.task.findMany({
       where: { projectId },
       include: { assignee: true },
@@ -120,34 +123,47 @@ projectRouter.get('/:id/users-with-tasks', async (req: Request, res: Response) =
         { assigneeId: 'asc' },
         { status: 'asc' }
       ]
-    })
+    });
 
-    // Group in memory
-    const result: Record<string, any> = {}
+    // Group tasks by user (assigneeId or unassigned)
+    const grouped: Record<string, { user: any; tasks: any[] }> = {};
 
     for (const task of tasks) {
-      const key = task.assigneeId ?? 'unassigned'
+      const key = task.assigneeId?.toString() ?? 'unassigned';
 
-      if (!result[key]) {
-        result[key] = {
-          user: task.assignee || null,
+      // Create user object if it doesn’t exist yet
+      if (!grouped[key]) {
+        grouped[key] = {
+          user: task.assignee
+            ? { id: task.assignee.id, name: task.assignee.name, email: task.assignee.email }
+            : { id: null, name: 'Unassigned', email: null },
           tasks: []
-        }
+        };
       }
 
-      result[key].tasks.push(task)
+      // Add task to the grouped list, including assigneeName for convenience
+      grouped[key].tasks.push({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        status: task.status,
+        dueDate: task.dueDate,
+        assigneeName: task.assignee?.name || task.assignee?.email || 'Unassigned'
+      });
     }
 
-    res.json(Object.values(result))
+    // Convert grouped object to array for frontend consumption
+    res.json(Object.values(grouped));
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch users with tasks' })
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-})
-
+});
 
 // Delete Project (cascade deletes tasks)
 projectRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
+    console.log("Deleting Project*******");
     const projectId = parseInt(req.params.id as string)
 
     await prisma.project.delete({

@@ -64,5 +64,5 @@ model Task {
   @@index([projectId, assigneeId])
 
   // Ensure unique task titles per project
-  @@unique([projectId, title])
+  @@unique([projectId, title, assigneeId])
 }
