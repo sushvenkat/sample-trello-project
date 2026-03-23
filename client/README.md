@@ -75,6 +75,7 @@ GET    /projects/:id/users-with-tasks
 POST   /projects/:id/tasks/create  
 PATCH  /projects/:id/tasks/:taskId/update-task  
 GET    /users  
+DELETE /projects/:id
 
 ## 🧠 Core Logic
 
@@ -85,6 +86,7 @@ Drag-and-drop flow:
 2. Extract source/destination
 3. Update UI optimistically
 4. Sync with backend
+5. Web socket implementation for real time updates to tasks
 
 State structure:
 [
@@ -108,12 +110,16 @@ npx tsx src/server.ts
 Backend should run at http://localhost:3000
 Frontend enpoint: http://localhost:5173/
 
+1. http://localhost:5173/signup - signup a new user
+2. http://localhost:5173/login - login with user
+3. http://localhost:5173/dashboard - See multiple Projects/create Projects and delete if needed
+4. http://localhost:5173/projects/{id} - See Tasks/Create tasks.
+
 To add users to system with Names, run the script.ts file npx tsx script.ts
 ## 🔮 Future Improvements
 
-- Redux / global state  
-- WebSocket real-time sync  
-- Authentication  - OAuth2.0
+- Redux / global state  (Did not choose REDUX store presently because of the number of components and complexity. But this is extensible.)
+- Authorization on API with JWT tokens  - (I was not able to get this in due to time contraints). This would need a Bearer token to be added on the requests and a JWT.verify() on the backend service.
 
 ## 👩‍💻 Author
 
