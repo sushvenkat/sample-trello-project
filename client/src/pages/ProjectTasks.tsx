@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import type { DropResult } from "@hello-pangea/dnd";
@@ -41,17 +41,14 @@ export default function ProjectTasks() {
 
   const statuses: ("todo" | "in-progress" | "done")[] = ["todo", "in-progress", "done"];
 
-  useEffect(() => {
-    if (!id) return;
-    fetchTasks(id);
-    fetchUsers();
-  }, [id]);
+  // WebSocket ref
+  const wsRef = useRef<WebSocket | null>(null);
 
+  // Fetch tasks
   const fetchTasks = async (projectId: string) => {
     try {
       const res = await fetch(`${baseURL}/${projectId}/users-with-tasks`);
       if (!res.ok) throw new Error("Failed to fetch tasks");
-
       const data: UserWithTasks[] = await res.json();
 
       const normalized = data.map((g) => ({
@@ -73,6 +70,7 @@ export default function ProjectTasks() {
     }
   };
 
+  // Fetch users
   const fetchUsers = async () => {
     try {
       const res = await fetch(`${userURL}/`);
@@ -83,6 +81,39 @@ export default function ProjectTasks() {
       setUsers([]);
     }
   };
+
+  // WebSocket setup with auto-reconnect
+  useEffect(() => {
+    if (!id) return;
+    fetchTasks(id);
+    fetchUsers();
+
+    let ws: WebSocket;
+    let reconnectTimeout: NodeJS.Timeout;
+
+    const connectWS = () => {
+      ws = new WebSocket(`ws://localhost:3000/projects/${id}/ws`);
+      wsRef.current = ws;
+
+      ws.onopen = () => console.log("WebSocket connected");
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === "TASKS_UPDATED") fetchTasks(id);
+      };
+      ws.onerror = (err) => console.error("WebSocket error:", err);
+      ws.onclose = () => {
+        console.log("WebSocket disconnected. Reconnecting in 2s...");
+        reconnectTimeout = setTimeout(connectWS, 2000);
+      };
+    };
+
+    connectWS();
+
+    return () => {
+      clearTimeout(reconnectTimeout);
+      ws.close();
+    };
+  }, [id]);
 
   const openModal = () => {
     setShowModal(true);
@@ -100,10 +131,7 @@ export default function ProjectTasks() {
   };
 
   const handleTaskSubmit = async () => {
-    if (!title.trim()) {
-      setError("Task title is required");
-      return;
-    }
+    if (!title.trim()) return setError("Task title is required");
     if (!id) return;
 
     setCreating(true);
@@ -130,9 +158,6 @@ export default function ProjectTasks() {
         return;
       }
 
-      // ✅ Refresh tasks from backend
-      await fetchTasks(id);
-
       closeModal();
     } catch (err) {
       console.error(err);
@@ -142,6 +167,7 @@ export default function ProjectTasks() {
     }
   };
 
+  // Handle drag and drop with optimistic update
   const onDragEnd = (result: DropResult) => {
     const { source, destination, draggableId } = result;
     if (!destination || !id) return;
@@ -162,9 +188,10 @@ export default function ProjectTasks() {
 
       const taskIndex = sourceGroup.tasks.findIndex((t) => t.id === taskId);
       if (taskIndex === -1) return prev;
+
       const [task] = sourceGroup.tasks.splice(taskIndex, 1);
 
-      const updatedTask = {
+      const updatedTask: Task = {
         ...task,
         status: destStatus,
         assigneeId: destGroup.user.id,
@@ -175,28 +202,21 @@ export default function ProjectTasks() {
       const sameStatusTasks = destTasks.filter((t) => t.status === destStatus);
 
       let realIndex: number;
-      if (sameStatusTasks.length === 0) {
-        realIndex = destTasks.length;
-      } else if (destination.index === 0) {
+      if (sameStatusTasks.length === 0) realIndex = destTasks.length;
+      else if (destination.index === 0)
         realIndex = destTasks.findIndex((t) => t.id === sameStatusTasks[0].id);
-      } else {
+      else
         realIndex =
           destTasks.findIndex((t) => t.id === sameStatusTasks[destination.index - 1].id) + 1;
-      }
 
       destTasks.splice(realIndex, 0, updatedTask);
 
-      // Update backend and refresh tasks
+      // Send update to backend
       fetch(`${baseURL}/${id}/tasks/${taskId}/update-task`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: destStatus,
-          assigneeId: destGroup.user.id,
-        }),
-      })
-        .then(() => fetchTasks(id))
-        .catch(console.error);
+        body: JSON.stringify({ status: destStatus, assigneeId: destGroup.user.id }),
+      }).catch(console.error);
 
       return newState;
     });
@@ -226,18 +246,13 @@ export default function ProjectTasks() {
       {/* Kanban Board */}
       <DragDropContext onDragEnd={onDragEnd}>
         <div style={{ display: "grid", gridTemplateColumns: `200px repeat(${statuses.length}, 1fr)`, gap: 10 }}>
-          {/* Status Headers */}
           <div></div>
           {statuses.map((s) => (
-            <div
-              key={s}
-              style={{ textAlign: "center", fontWeight: "bold", padding: 8, borderBottom: "2px solid #333" }}
-            >
+            <div key={s} style={{ textAlign: "center", fontWeight: "bold", padding: 8, borderBottom: "2px solid #333" }}>
               {s.replace("-", " ")}
             </div>
           ))}
 
-          {/* Assignee Rows */}
           {groupedTasks.map(({ user, tasks }) => (
             <React.Fragment key={user.id ?? user.name}>
               <div style={{ padding: 8, fontWeight: "bold", borderRight: "2px solid #ccc", backgroundColor: "#f9f9f9" }}>
@@ -270,24 +285,14 @@ export default function ProjectTasks() {
                                   padding: 8,
                                   borderRadius: 6,
                                   backgroundColor:
-                                    s === "todo"
-                                      ? "#fef3c7"
-                                      : s === "in-progress"
-                                      ? "#bfdbfe"
-                                      : "#bbf7d0",
-                                  boxShadow: snapshot.isDragging
-                                    ? "0 2px 6px rgba(0,0,0,0.2)"
-                                    : "0 1px 3px rgba(0,0,0,0.1)",
+                                    s === "todo" ? "#fef3c7" : s === "in-progress" ? "#bfdbfe" : "#bbf7d0",
+                                  boxShadow: snapshot.isDragging ? "0 2px 6px rgba(0,0,0,0.2)" : "0 1px 3px rgba(0,0,0,0.1)",
                                   ...provided.draggableProps.style,
                                 }}
                               >
                                 <strong>{t.title}</strong>
                                 {t.description && <div style={{ fontSize: "0.9em" }}>{t.description}</div>}
-                                {t.dueDate && (
-                                  <div style={{ fontSize: "0.8em", marginTop: 2 }}>
-                                    Due: {new Date(t.dueDate).toLocaleDateString()}
-                                  </div>
-                                )}
+                                {t.dueDate && <div style={{ fontSize: "0.8em", marginTop: 2 }}>Due: {new Date(t.dueDate).toLocaleDateString()}</div>}
                               </div>
                             )}
                           </Draggable>
@@ -320,85 +325,35 @@ export default function ProjectTasks() {
             zIndex: 9999,
           }}
         >
-          <div
-            style={{
-              backgroundColor: "white",
-              padding: 24,
-              borderRadius: 8,
-              width: 400,
-              maxHeight: "90vh",
-              overflowY: "auto",
-            }}
-          >
+          <div style={{ backgroundColor: "white", padding: 24, borderRadius: 8, width: 400, maxHeight: "90vh", overflowY: "auto" }}>
             <h3 style={{ marginBottom: 16 }}>Create Task</h3>
             {error && <p style={{ color: "red", marginBottom: 16 }}>{error}</p>}
 
             <label>Title</label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Task title"
-              style={{ width: "100%", padding: 8, marginBottom: 16 }}
-            />
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task title" style={{ width: "100%", padding: 8, marginBottom: 16 }} />
 
             <label>Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Task description"
-              style={{ width: "100%", padding: 8, marginBottom: 16 }}
-            />
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Task description" style={{ width: "100%", padding: 8, marginBottom: 16 }} />
 
             <label>Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as any)}
-              style={{ width: "100%", padding: 8, marginBottom: 16 }}
-            >
+            <select value={status} onChange={(e) => setStatus(e.target.value as any)} style={{ width: "100%", padding: 8, marginBottom: 16 }}>
               <option value="todo">Todo</option>
               <option value="in-progress">In Progress</option>
               <option value="done">Done</option>
             </select>
 
             <label>Assignee</label>
-            <select
-              value={assigneeId}
-              onChange={(e) => setAssigneeId(e.target.value ? Number(e.target.value) : "")}
-              style={{ width: "100%", padding: 8, marginBottom: 16 }}
-            >
+            <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value ? Number(e.target.value) : "")} style={{ width: "100%", padding: 8, marginBottom: 16 }}>
               <option value="">Select Assignee</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name || u.email}
-                </option>
-              ))}
+              {users.map((u) => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
             </select>
 
             <label>Due Date</label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              style={{ width: "100%", padding: 8, marginBottom: 16 }}
-            />
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={{ width: "100%", padding: 8, marginBottom: 16 }} />
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button onClick={closeModal} style={{ padding: "0.5rem 1rem" }}>
-                Cancel
-              </button>
-              <button
-                onClick={handleTaskSubmit}
-                disabled={creating}
-                style={{
-                  padding: "0.5rem 1rem",
-                  backgroundColor: "#2563eb",
-                  color: "white",
-                  border: "none",
-                  borderRadius: 4,
-                  cursor: creating ? "not-allowed" : "pointer",
-                  opacity: creating ? 0.6 : 1,
-                }}
-              >
+              <button onClick={closeModal} style={{ padding: "0.5rem 1rem" }}>Cancel</button>
+              <button onClick={handleTaskSubmit} disabled={creating} style={{ padding: "0.5rem 1rem", backgroundColor: "#2563eb", color: "white", border: "none", borderRadius: 4, cursor: creating ? "not-allowed" : "pointer", opacity: creating ? 0.6 : 1 }}>
                 {creating ? "Creating..." : "Create"}
               </button>
             </div>
